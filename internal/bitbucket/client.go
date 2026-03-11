@@ -109,7 +109,14 @@ func DecodeResponse(resp *http.Response, v interface{}) error {
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("domain: API error (HTTP %d): %s", resp.StatusCode, string(body))
+		switch resp.StatusCode {
+		case 401:
+			return fmt.Errorf("domain: authentication failed (HTTP 401): %s\nCheck your credentials with 'bb auth status' or re-login with 'bb auth login'", string(body))
+		case 404:
+			return fmt.Errorf("domain: not found (HTTP 404) — check that the workspace/repo exist and you have access. Response: %s", string(body))
+		default:
+			return fmt.Errorf("domain: API error (HTTP %d): %s", resp.StatusCode, string(body))
+		}
 	}
 
 	if v == nil {

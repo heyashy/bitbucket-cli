@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/heyashy/bitbucket-cli/internal/auth"
 	"github.com/heyashy/bitbucket-cli/internal/bitbucket"
@@ -18,6 +19,17 @@ func AuthProvider() (auth.Provider, error) {
 	method := cfg.AuthMethod()
 
 	switch method {
+	case "apitoken":
+		token, err := auth.LoadToken()
+		if err != nil {
+			return nil, fmt.Errorf("domain: not logged in — run 'bb auth login': %w", err)
+		}
+		parts := splitOnce(token.AccessToken, ":")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("domain: invalid stored credentials — run 'bb auth login'")
+		}
+		return auth.NewAPITokenProvider(parts[0], parts[1]), nil
+
 	case "apppassword":
 		token, err := auth.LoadToken()
 		if err != nil {
@@ -25,7 +37,7 @@ func AuthProvider() (auth.Provider, error) {
 		}
 		parts := splitOnce(token.AccessToken, ":")
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("domain: invalid stored credentials — run 'bb auth login --app-password'")
+			return nil, fmt.Errorf("domain: invalid stored credentials — run 'bb auth login'")
 		}
 		return auth.NewAppPasswordProvider(parts[0], parts[1]), nil
 
@@ -33,7 +45,7 @@ func AuthProvider() (auth.Provider, error) {
 		clientID := cfg.OAuthClientID()
 		clientSecret := cfg.OAuthClientSecret()
 		if clientID == "" || clientSecret == "" {
-			return nil, fmt.Errorf("validation: OAuth not configured — run 'bb auth login --app-password' or configure OAuth")
+			return nil, fmt.Errorf("validation: OAuth not configured — run 'bb auth login' or configure OAuth")
 		}
 		return auth.NewOAuthProvider(clientID, clientSecret), nil
 
@@ -61,12 +73,13 @@ func PRService() (*bitbucket.PRService, error) {
 	if workspace == "" || repoSlug == "" {
 		info, err := git.DetectRepo()
 		if err != nil {
-			return nil, fmt.Errorf("cannot detect repository — set workspace and repo_slug in config or ensure a Bitbucket remote exists: %w", err)
+			return nil, fmt.Errorf("not a Bitbucket repository — set workspace and repo_slug in config or ensure a Bitbucket remote exists: %w", err)
 		}
 		workspace = info.Workspace
 		repoSlug = info.RepoSlug
 	}
 
+	fmt.Fprintf(os.Stderr, "Using %s/%s\n", workspace, repoSlug)
 	return bitbucket.NewPRService(client, workspace, repoSlug), nil
 }
 

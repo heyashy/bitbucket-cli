@@ -11,12 +11,40 @@ import (
 
 	"github.com/heyashy/bitbucket-cli/internal/bitbucket"
 	"github.com/heyashy/bitbucket-cli/internal/cmd/resolve"
+	"github.com/heyashy/bitbucket-cli/internal/ui"
 )
 
 func newPRCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pr",
 		Short: "Manage pull requests",
+		Long: `Create, list, view, merge, approve, decline, comment on, and diff pull requests
+on Bitbucket Cloud.
+
+Most commands accept an optional [id] argument. When omitted, bb automatically
+finds the open pull request for your current git branch.
+
+The workspace and repository are auto-detected from your git remote URL.
+Override with: bb config set workspace <name> / bb config set repo_slug <name>
+
+COMMANDS
+  bb pr create               Create a new PR from the current branch
+  bb pr list                 List PRs (default: open)
+  bb pr view [id]            Show PR details, reviewers, and status
+  bb pr merge [id]           Merge a PR (supports squash/fast-forward)
+  bb pr approve [id]         Approve a PR
+  bb pr decline [id]         Decline a PR
+  bb pr comment [id] -b msg  Add a comment to a PR
+  bb pr diff [id]            Show the full diff of a PR
+
+EXAMPLES
+  bb pr create -t "Fix bug" -d main
+  bb pr create -t "Feature" -b "Description here" --close-branch
+  bb pr list --state MERGED
+  bb pr view                    View the PR for the current branch
+  bb pr merge --strategy squash
+  bb pr approve 42
+  bb pr comment -b "LGTM"`,
 	}
 
 	cmd.AddCommand(newPRCreateCmd())
@@ -29,6 +57,35 @@ func newPRCmd() *cobra.Command {
 	cmd.AddCommand(newPRDiffCmd())
 
 	return cmd
+}
+
+// resolvePRID gets a PR ID from args, or finds the open PR for the current branch.
+func resolvePRID(args []string, svc *bitbucket.PRService) (int, error) {
+	if len(args) > 0 {
+		id, err := strconv.Atoi(args[0])
+		if err != nil {
+			return 0, fmt.Errorf("validation: PR id must be a number, got '%s'", args[0])
+		}
+		return id, nil
+	}
+
+	branch, err := currentBranch()
+	if err != nil {
+		return 0, fmt.Errorf("validation: provide a PR id or run from a feature branch")
+	}
+
+	result, err := svc.List(context.Background(), bitbucket.ListPRsOpts{State: "OPEN"})
+	if err != nil {
+		return 0, err
+	}
+
+	for _, pr := range result.Values {
+		if pr.Source.Branch.Name == branch {
+			return pr.ID, nil
+		}
+	}
+
+	return 0, fmt.Errorf("domain: no open PR found for branch '%s' — provide a PR id", branch)
 }
 
 func newPRCreateCmd() *cobra.Command {
@@ -44,6 +101,23 @@ func newPRCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a pull request",
+		Long: `Create a new pull request on Bitbucket Cloud.
+
+Source branch defaults to your current git branch.
+Destination branch defaults to "main".
+
+FLAGS
+  -t, --title        PR title (required)
+  -b, --body         PR description/body text
+  -s, --source       Source branch (default: current git branch)
+  -d, --dest         Destination branch (default: main)
+  -r, --reviewer     Reviewer UUID (repeatable for multiple reviewers)
+      --close-branch Delete source branch after merge
+
+EXAMPLES
+  bb pr create -t "Fix login bug"
+  bb pr create -t "Add feature" -b "Detailed description" -d develop
+  bb pr create -t "Hotfix" --close-branch -r "{uuid-of-reviewer}"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
@@ -82,11 +156,14 @@ func newPRCreateCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Created PR #%d: %s\n", pr.ID, pr.Title)
-			fmt.Printf("%s → %s\n", pr.Source.Branch.Name, pr.Destination.Branch.Name)
+			fmt.Println()
+			fmt.Printf("  %s Created PR %s\n", ui.CheckMark(), ui.PRNumber.Render(fmt.Sprintf("#%d", pr.ID)))
+			fmt.Printf("  %s\n", ui.Bold.Render(pr.Title))
+			fmt.Printf("  %s %s %s\n", ui.PRBranch.Render(pr.Source.Branch.Name), ui.Arrow(), ui.PRBranch.Render(pr.Destination.Branch.Name))
 			if pr.Links.HTML != nil {
-				fmt.Printf("URL: %s\n", pr.Links.HTML.Href)
+				fmt.Printf("  %s\n", ui.Faint.Render(pr.Links.HTML.Href))
 			}
+			fmt.Println()
 
 			return nil
 		},
@@ -108,6 +185,17 @@ func newPRListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List pull requests",
+		Long: `List pull requests for the current repository.
+
+Defaults to showing open PRs. Use --state to filter.
+
+FLAGS
+  --state   Filter by state: OPEN, MERGED, DECLINED, SUPERSEDED (default: OPEN)
+
+EXAMPLES
+  bb pr list
+  bb pr list --state MERGED
+  bb pr list --state DECLINED`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
@@ -121,18 +209,25 @@ func newPRListCmd() *cobra.Command {
 			}
 
 			if len(result.Values) == 0 {
-				fmt.Println("No pull requests found.")
+				fmt.Println(ui.Faint.Render("  No pull requests found."))
 				return nil
 			}
 
+			fmt.Println()
 			for _, pr := range result.Values {
-				fmt.Printf("#%-4d %-10s %-50s %s → %s\n",
-					pr.ID,
-					pr.State,
-					truncate(pr.Title, 50),
-					pr.Source.Branch.Name,
-					pr.Destination.Branch.Name,
+				number := ui.PRNumber.Render(fmt.Sprintf("#%d", pr.ID))
+				badge := ui.StatusBadge(pr.State)
+				title := ui.PRTitle.Render(truncate(pr.Title, 50))
+				branch := fmt.Sprintf("%s %s %s",
+					ui.PRBranch.Render(pr.Source.Branch.Name),
+					ui.Arrow(),
+					ui.PRBranch.Render(pr.Destination.Branch.Name),
 				)
+				author := ui.PRAuthor.Render(pr.Author.DisplayName)
+
+				fmt.Printf("  %s %s %s\n", number, badge, title)
+				fmt.Printf("         %s  %s\n", branch, author)
+				fmt.Println()
 			}
 
 			return nil
@@ -146,18 +241,18 @@ func newPRListCmd() *cobra.Command {
 
 func newPRViewCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "view <id>",
-		Short: "View pull request details",
-		Args:  cobra.ExactArgs(1),
+		Use:   "view [id]",
+		Short: "View pull request details (defaults to current branch PR)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			pr, err := svc.Get(context.Background(), id)
@@ -165,28 +260,52 @@ func newPRViewCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("PR #%d: %s\n", pr.ID, pr.Title)
-			fmt.Printf("State:  %s\n", pr.State)
-			fmt.Printf("Author: %s\n", pr.Author.DisplayName)
-			fmt.Printf("Branch: %s → %s\n", pr.Source.Branch.Name, pr.Destination.Branch.Name)
-			fmt.Printf("Created: %s\n", pr.CreatedOn.Format("2006-01-02 15:04"))
+			fmt.Println()
+			fmt.Printf("  %s %s %s\n",
+				ui.PRNumber.Render(fmt.Sprintf("#%d", pr.ID)),
+				ui.StatusBadge(pr.State),
+				ui.Bold.Render(pr.Title),
+			)
+			fmt.Println(ui.Divider.String())
+
+			fmt.Printf("  %s %s\n", ui.Key.Render("Author:"), ui.PRAuthor.Render(pr.Author.DisplayName))
+			fmt.Printf("  %s %s %s %s\n",
+				ui.Key.Render("Branch:"),
+				ui.Value.Render(pr.Source.Branch.Name),
+				ui.Arrow(),
+				ui.Value.Render(pr.Destination.Branch.Name),
+			)
+			fmt.Printf("  %s %s\n", ui.Key.Render("Created:"), ui.Faint.Render(pr.CreatedOn.Format("2006-01-02 15:04")))
+
 			if pr.Description != "" {
-				fmt.Printf("\n%s\n", pr.Description)
-			}
-			if pr.Links.HTML != nil {
-				fmt.Printf("\nURL: %s\n", pr.Links.HTML.Href)
+				fmt.Println()
+				fmt.Printf("  %s\n", pr.Description)
 			}
 
 			if len(pr.Participants) > 0 {
-				fmt.Println("\nParticipants:")
+				fmt.Println()
+				fmt.Println(ui.Divider.String())
+				fmt.Println(ui.Bold.Render("  Reviewers"))
 				for _, p := range pr.Participants {
-					status := "reviewed"
+					var status string
 					if p.Approved {
-						status = "approved"
+						status = ui.Success.Render("approved")
+					} else {
+						status = ui.Faint.Render(p.State)
 					}
-					fmt.Printf("  %s (%s) — %s\n", p.User.DisplayName, p.Role, status)
+					fmt.Printf("  %s %s (%s)\n",
+						ui.PRAuthor.Render(p.User.DisplayName),
+						ui.Faint.Render(p.Role),
+						status,
+					)
 				}
 			}
+
+			if pr.Links.HTML != nil {
+				fmt.Println()
+				fmt.Printf("  %s\n", ui.Faint.Render(pr.Links.HTML.Href))
+			}
+			fmt.Println()
 
 			return nil
 		},
@@ -201,18 +320,30 @@ func newPRMergeCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "merge <id>",
-		Short: "Merge a pull request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "merge [id]",
+		Short: "Merge a pull request (defaults to current branch PR)",
+		Long: `Merge a pull request. Defaults to the open PR for the current branch.
+
+FLAGS
+  --strategy      Merge strategy: merge_commit, squash, fast_forward
+  --close-branch  Delete source branch after merge
+  -m, --message   Custom merge commit message
+
+EXAMPLES
+  bb pr merge                            Merge current branch PR
+  bb pr merge 42
+  bb pr merge --strategy squash
+  bb pr merge --close-branch -m "Ship it"`,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			opts := bitbucket.MergeOpts{
@@ -228,7 +359,11 @@ func newPRMergeCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Merged PR #%d: %s\n", pr.ID, pr.Title)
+			fmt.Printf("\n  %s Merged PR %s %s\n\n",
+				ui.CheckMark(),
+				ui.PRNumber.Render(fmt.Sprintf("#%d", pr.ID)),
+				ui.Bold.Render(pr.Title),
+			)
 
 			return nil
 		},
@@ -243,25 +378,25 @@ func newPRMergeCmd() *cobra.Command {
 
 func newPRApproveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "approve <id>",
-		Short: "Approve a pull request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "approve [id]",
+		Short: "Approve a pull request (defaults to current branch PR)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			if err := svc.Approve(context.Background(), id); err != nil {
 				return err
 			}
 
-			fmt.Printf("Approved PR #%d\n", id)
+			fmt.Printf("\n  %s Approved PR %s\n\n", ui.CheckMark(), ui.PRNumber.Render(fmt.Sprintf("#%d", id)))
 			return nil
 		},
 	}
@@ -269,18 +404,18 @@ func newPRApproveCmd() *cobra.Command {
 
 func newPRDeclineCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "decline <id>",
-		Short: "Decline a pull request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "decline [id]",
+		Short: "Decline a pull request (defaults to current branch PR)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			pr, err := svc.Decline(context.Background(), id)
@@ -288,7 +423,11 @@ func newPRDeclineCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Declined PR #%d: %s\n", pr.ID, pr.Title)
+			fmt.Printf("\n  %s Declined PR %s %s\n\n",
+				ui.CrossMark(),
+				ui.PRNumber.Render(fmt.Sprintf("#%d", pr.ID)),
+				ui.Bold.Render(pr.Title),
+			)
 			return nil
 		},
 	}
@@ -298,18 +437,18 @@ func newPRCommentCmd() *cobra.Command {
 	var body string
 
 	cmd := &cobra.Command{
-		Use:   "comment <id>",
-		Short: "Add a comment to a pull request",
-		Args:  cobra.ExactArgs(1),
+		Use:   "comment [id]",
+		Short: "Add a comment to a pull request (defaults to current branch PR)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			if body == "" {
@@ -321,7 +460,11 @@ func newPRCommentCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Added comment #%d to PR #%d\n", comment.ID, id)
+			fmt.Printf("\n  %s Added comment #%d to PR %s\n\n",
+				ui.CheckMark(),
+				comment.ID,
+				ui.PRNumber.Render(fmt.Sprintf("#%d", id)),
+			)
 			return nil
 		},
 	}
@@ -333,18 +476,18 @@ func newPRCommentCmd() *cobra.Command {
 
 func newPRDiffCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "diff <id>",
-		Short: "Show pull request diff",
-		Args:  cobra.ExactArgs(1),
+		Use:   "diff [id]",
+		Short: "Show pull request diff (defaults to current branch PR)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := resolve.PRService()
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[0])
+			id, err := resolvePRID(args, svc)
 			if err != nil {
-				return fmt.Errorf("validation: PR id must be a number")
+				return err
 			}
 
 			diff, err := svc.Diff(context.Background(), id)
@@ -372,4 +515,3 @@ func truncate(s string, max int) string {
 	}
 	return s[:max-3] + "..."
 }
-

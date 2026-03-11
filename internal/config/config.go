@@ -81,6 +81,10 @@ func (c *Config) Set(key string, value interface{}) {
 	c.v.Set(key, value)
 }
 
+func (c *Config) AllSettings() map[string]interface{} {
+	return c.v.AllSettings()
+}
+
 func (c *Config) WriteGlobal() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
