@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/heyashy/bb/internal/bitbucket"
-	"github.com/heyashy/bb/internal/cmd/resolve"
+	"github.com/heyashy/bitbucket-cli/internal/bitbucket"
+	"github.com/heyashy/bitbucket-cli/internal/cmd/resolve"
 )
 
 func newPRCmd() *cobra.Command {

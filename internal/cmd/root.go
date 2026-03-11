@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/heyashy/bb/internal/git"
+	"github.com/heyashy/bitbucket-cli/internal/git"
 )
 
 var knownCommands = map[string]bool{

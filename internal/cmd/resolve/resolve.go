@@ -3,10 +3,10 @@ package resolve
 import (
 	"fmt"
 
-	"github.com/heyashy/bb/internal/auth"
-	"github.com/heyashy/bb/internal/bitbucket"
-	"github.com/heyashy/bb/internal/config"
-	"github.com/heyashy/bb/internal/git"
+	"github.com/heyashy/bitbucket-cli/internal/auth"
+	"github.com/heyashy/bitbucket-cli/internal/bitbucket"
+	"github.com/heyashy/bitbucket-cli/internal/config"
+	"github.com/heyashy/bitbucket-cli/internal/git"
 )
 
 func AuthProvider() (auth.Provider, error) {

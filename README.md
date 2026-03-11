@@ -21,7 +21,7 @@ brew install heyashy/tap/bb
 ### Go install
 
 ```sh
-go install github.com/heyashy/bb/cmd/bb@latest
+go install github.com/heyashy/bitbucket-cli/cmd/bb@latest
 ```
 
 ### Download binary

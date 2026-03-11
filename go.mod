@@ -1,4 +1,4 @@
-module github.com/heyashy/bb
+module github.com/heyashy/bitbucket-cli
 
 go 1.25.3
 

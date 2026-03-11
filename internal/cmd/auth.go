@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/heyashy/bb/internal/auth"
-	"github.com/heyashy/bb/internal/config"
+	"github.com/heyashy/bitbucket-cli/internal/auth"
+	"github.com/heyashy/bitbucket-cli/internal/config"
 )
 
 func newAuthCmd() *cobra.Command {

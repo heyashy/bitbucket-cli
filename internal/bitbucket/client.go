@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/heyashy/bb/internal/auth"
+	"github.com/heyashy/bitbucket-cli/internal/auth"
 )
 
 const defaultBaseURL = "https://api.bitbucket.org/2.0"

@@ -45,14 +45,15 @@ changelog:
       - "^test:"
       - "^chore:"
 
-homebrew_casks:
-  - repository:
-      owner: heyashy
-      name: homebrew-tap
-    homepage: "https://github.com/heyashy/bitbucket-cli"
-    description: "Bitbucket CLI — git proxy with Bitbucket superpowers"
-    license: "MIT"
-    install: |
-      bin.install "bb"
-    test: |
-      system "#{bin}/bb", "--version"
+# Uncomment when heyashy/homebrew-tap repo is created:
+# homebrew_casks:
+#   - repository:
+#       owner: heyashy
+#       name: homebrew-tap
+#     homepage: "https://github.com/heyashy/bitbucket-cli"
+#     description: "Bitbucket CLI — git proxy with Bitbucket superpowers"
+#     license: "MIT"
+#     install: |
+#       bin.install "bb"
+#     test: |
+#       system "#{bin}/bb", "--version"
