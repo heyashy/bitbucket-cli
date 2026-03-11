@@ -9,6 +9,7 @@ import (
 )
 
 var knownCommands = map[string]bool{
+	"api":    true,
 	"auth":   true,
 	"pr":     true,
 	"config": true,
@@ -53,6 +54,15 @@ PULL REQUESTS
 
   When [id] is omitted, bb finds the open PR for your current git branch.
 
+RAW API ACCESS
+  bb api <endpoint>        Make authenticated requests to any Bitbucket API endpoint
+  bb api /user             Get current user
+  bb api /repositories/{workspace}/{repo}/pipelines
+  bb api -X POST /repositories/{workspace}/{repo}/pullrequests/42/approve
+
+  {workspace} and {repo} are auto-replaced from your git remote.
+  See 'bb api --help' for the full list of common endpoints.
+
 CONFIGURATION
   bb config get <key>      Read a config value
   bb config set <key> <v>  Write a config value (use --global for global)
@@ -83,6 +93,7 @@ EXAMPLES
 		SilenceErrors: true,
 	}
 
+	rootCmd.AddCommand(newAPICmd())
 	rootCmd.AddCommand(newAuthCmd())
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newConfigCmd())

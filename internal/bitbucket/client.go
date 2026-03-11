@@ -104,6 +104,10 @@ func (c *HTTPClient) do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+type RawResponse struct {
+	Response *http.Response
+}
+
 func DecodeResponse(resp *http.Response, v interface{}) error {
 	defer resp.Body.Close()
 
